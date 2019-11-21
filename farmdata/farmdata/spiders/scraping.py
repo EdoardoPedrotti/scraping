@@ -5,9 +5,11 @@ import requests
 import scrapy as scrapy
 from bs4 import BeautifulSoup
 
+comma_float = re.compile("\s*\d+,\d+")
 
 class FarmDataSpider(scrapy.Spider):
     name = "farmadata"
+    page = 1
 
     def start_requests(self):
         urls = ["https://placotrans.infarmed.pt/Publico/ListagemPublica.aspx"]
@@ -24,23 +26,28 @@ class FarmDataSpider(scrapy.Spider):
         for s in new_soup:
             all_tds = s.find_all('td')
 
-            out = ",".join([re.sub(r"</?.{1,2}>", '', str(td)) for td in all_tds]) + "\n"
-            self.log(out)
+            out = ",".join([self.extract_info(td) for td in all_tds]) + "\n"
             with open(filename, 'a+') as f:
                 f.write(out)
 
+        link_table = response.xpath('//*[@id="tabs-1"]/div[2]/div[2]/table').get()
+        link_soup = BeautifulSoup(link_table, 'html.parser')
+        all_links = link_soup.find_all('a')
+        for l in all_links:
+            if int(l.next) == self.page +1:
+                self.log(f"going to page {l.next}")
+                self.page += 1
+                next_page = response.urljoin(l.get('href'))
+                yield scrapy.Request(next_page, callback=self.parse)
+        self.log(all_links)
 
-# def steal_data(url):
-#     spidy = FarmDataSpider()
-#     spidy.start_urls = [url]
-#
-#     spidy.start_requests()
-#
-#
-#
-#
-# if __name__ == "__main__":
-#     url = "https://placotrans.infarmed.pt/Publico/ListagemPublica.aspx"
-#
-#     steal_data(url)
+
+
+    def extract_info(self, td):
+        text = re.sub(r"</?.{1,2}>", '', str(td))
+        text = re.sub(r"\s{2}","", text)
+        value = text
+        if comma_float.match(text):
+            value = re.sub(r"\s+", "", text).replace(",", ".")
+        return value
 
