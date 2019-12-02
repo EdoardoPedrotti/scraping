@@ -24,8 +24,9 @@ class FarmDataSpider(scrapy.Spider):
             yield SeleniumRequest(url=url, callback=self.parse, screenshot=True)
 
     def parse(self, response):
-        filename = "test.csv"
+        filename = "dump.csv"
         container_xpath = '//*[@id="ctl00_ContentPlaceHolder1_gvDoacoesPublic"]'
+        loading_div = '//*[@id="ctl00_updateProgress"]/div'
         driver = response.request.meta["driver"]
         driver.set_window_size(2480, 1344)
         driver.find_element_by_xpath(
@@ -37,9 +38,9 @@ class FarmDataSpider(scrapy.Spider):
                 self.log(f"page {self.page}", level=logging.INFO)
                 # driver.find_element_by_xpath(f"//*[text() = {self.page}]").click()
                 # next.click()
-                container = driver.find_element_by_xpath(container_xpath)
+
                 soup = BeautifulSoup(
-                    container.get_attribute("innerHTML"), "html.parser"
+                    driver.find_element_by_xpath(container_xpath).get_attribute("innerHTML"), "html.parser"
                 )
                 new_soup = soup.find_all("tr", re.compile("grid-row-style.*"))
                 for s in new_soup:
@@ -51,11 +52,17 @@ class FarmDataSpider(scrapy.Spider):
                     )
                     with open(filename, "a+") as f:
                         f.write(out)
+                driver.find_element_by_xpath("/html").screenshot(
+                    f"lastpage.png"
+                )
                 self.page += 1
-                next = None
                 if self.page == 21:
                     self.log(
                         f"click on more button on page {self.page}", level=logging.INFO
+                    )
+                    wait = WebDriverWait(driver, 30)
+                    element = wait.until(
+                        EC.invisibility_of_element((By.XPATH, loading_div))
                     )
                     next = driver.find_element_by_xpath(
                         '//*[@id="ctl00_ContentPlaceHolder1_pageCounterDoacoes_ctl21_Pager"]'
@@ -64,27 +71,26 @@ class FarmDataSpider(scrapy.Spider):
                     driver.find_element_by_xpath(
                         '//*[@id="tabs-1"]/div[2]/div[2]'
                     ).screenshot("nav_bar.png")
-                    sleep(6)
+                    sleep(8)
                 else:
                     self.log(f"next page {self.page}", level=logging.INFO)
-                    next = WebDriverWait(driver, 20).until(
+                    wait = WebDriverWait(driver, 30)
+                    element = wait.until(
+                        EC.invisibility_of_element((By.XPATH, loading_div))
+                    )
+                    next = WebDriverWait(driver, 30).until(
                         EC.element_to_be_clickable(
                             (By.XPATH, f"//*[text() = {self.page}]")
                         )
                     )
                     next.click()
-                    sleep(4.5)
+                    sleep(8)
             except NoSuchElementException as e:
                 driver.find_element_by_xpath("/html").screenshot(
                     f"maybe-last-page-{self.page}.png"
                 )
                 self.log(e)
                 break
-            except Exception as e:
-                self.log(e)
-                driver.find_element_by_xpath("/html").screenshot(
-                    f"something-wrong-page-{self.page}.png"
-                )
 
     def dump_screenshot(self, response, page):
         with open(f"page-{page}.png", "wb") as image_file:
